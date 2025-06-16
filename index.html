@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Generatore Schede Allenamento - REBORN TEAM</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- React -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- PDF Export Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
+        xintegrity="sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tSPHuGibyoVBL5gI9kkyCKv1Vf4YjuRhBaDewa=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* bg-gray-900 */
+        }
+        .font-teko {
+            font-family: 'Teko', sans-serif;
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        @media print {
+            .no-print { display: none !important; }
+            body { background-color: white; }
+            .print-area { box-shadow: none !important; margin: 0 !important; max-width: 100% !important; }
+        }
+        .tracking-input {
+            width: 100%;
+            height: 100%;
+            background-color: #fff;
+            border: 1px solid #9ca3af;
+            border-radius: 0.125rem;
+            text-align: center;
+            font-size: 0.875rem;
+            padding: 0.1rem;
+            color: #1f2937;
+        }
+        .tracking-input:focus {
+            outline: 2px solid #3b82f6;
+            outline-offset: 1px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            onAuthStateChanged, 
+            createUserWithEmailAndPassword, 
+            signInWithEmailAndPassword,
+            signOut
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, setDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        window.firebase = {
+            initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, onSnapshot, setDoc, setLogLevel,
+            createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut
+        };
+    </script>
+
+    <script type="text/babel">
+        const { useState, useCallback, useEffect, useRef } = React;
+        
+        // Configurazione del tuo progetto Firebase
+        const firebaseConfig = {
+          apiKey: "AIzaSyAUKaccbANokFRmFe-PEFHG_gPLmDv9_QU",
+          authDomain: "database-9185a.firebaseapp.com",
+          projectId: "database-9185a",
+          storageBucket: "database-9185a.appspot.com",
+          messagingSenderId: "881709192669",
+          appId: "1:881709192669:web:89d7e7a655c9366c545234",
+          measurementId: "G-DF3XS6HSR3"
+        };
+
+        // --- COSTANTI GLOBALI ---
+        const EXERCISE_CATEGORIES = ["Nessuna Categoria", "ADDOMINALI", "ADDUCTORS", "BICEPS", "CAVES", "CHEST ISO", "DECLINE PUSH", "FEMORALI", "GLUTEI", "HAMSTRINGS", "HIP HINGE", "HORIZONTAL PULL", "HORIZONTAL PUSH", "HIP EXTENSION", "INCLINE PUSH", "LED PRESS VARIATION", "LOWER BACK", "LUNGE", "PULLOVER", "QUADRICEPS", "SIDE DELTS", "SQUAT PATTERN", "TRAPS", "TRICEPS PUSH", "UPPER BACK", "VERTICAL PULL", "VERTICAL PUSH"];
+        const INITIAL_IMAGE_LIBRARY = {'panca piana con bilanciere': 'https://images.pexels.com/photos/176782/pexels-photo-176782.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1','squat con bilanciere': 'https://images.pexels.com/photos/7004381/pexels-photo-7004381.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1','curl con manubri (alternato)': 'https://images.pexels.com/photos/1431282/pexels-photo-1431282.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1','lat machine (presa larga)': 'https://images.pexels.com/photos/2204489/pexels-photo-2204489.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1'};
+        const INITIAL_FORM_STATE = { name: '', category: 'Nessuna Categoria', sets: '3', reps: '10', rest: '60"', notes: '', imageUrl: '' };
+        const createInitialSheets = () => ({A: { name: 'SCHEDA A', exercises: [] },B: { name: 'SCHEDA B', exercises: [] },C: { name: 'SCHEDA C', exercises: [] },D: { name: 'SCHEDA D', exercises: [] }});
+        const INITIAL_APP_STATE = {clientName: 'Nome Cliente',logoUrl: null,sheets: createInitialSheets(),imageLibrary: INITIAL_IMAGE_LIBRARY};
+        
+        // --- COMPONENTI UI ATOMICI ---
+
+        const LoadingSpinner = ({ message }) => (
+            <div className="min-h-screen bg-gray-900 flex flex-col justify-center items-center text-white">
+                <svg className="animate-spin -ml-1 mr-3 h-10 w-10 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p className="mt-4 text-xl font-teko tracking-wider">{message}</p>
+            </div>
+        );
+
+        const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, children }) => {
+            if (!isOpen) return null;
+            return (<div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4"><div className="bg-gray-800 rounded-lg p-6 w-full max-w-sm"><h3 className="text-xl font-bold text-white mb-4">{title}</h3><p className="text-gray-300 mb-6">{children}</p><div className="flex justify-end space-x-4"><button onClick={onClose} className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold rounded-lg">Annulla</button><button onClick={onConfirm} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg">Conferma</button></div></div></div>);
+        };
+        
+        // --- COMPONENTI PRINCIPALI ---
+
+        const AuthScreen = ({ auth }) => {
+            const [isLoginMode, setIsLoginMode] = useState(true);
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+            const { createUserWithEmailAndPassword, signInWithEmailAndPassword } = window.firebase;
+
+            const handleAuthAction = async (e) => {
+                e.preventDefault(); setLoading(true); setError('');
+                try {
+                    if (isLoginMode) {
+                        await signInWithEmailAndPassword(auth, email, password);
+                    } else {
+                        await createUserWithEmailAndPassword(auth, email, password);
+                    }
+                } catch (err) {
+                    if (err.code === 'auth/operation-not-allowed') { setError("Errore: L'autenticazione Email/Password non è abilitata nella console di Firebase.");
+                    } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') { setError("Email o password non corretti.");
+                    } else if (err.code === 'auth/email-already-in-use') { setError("Questa email è già stata registrata.");
+                    } else { setError("Si è verificato un errore. Riprova."); }
+                    console.error("Firebase Auth Error:", err);
+                } finally {
+                    setLoading(false);
+                }
+            };
+            
+            return (
+                 <div className="min-h-screen bg-gray-900 flex flex-col justify-center items-center p-4">
+                    <div className="w-full max-w-md">
+                        <div className="text-center mb-8">
+                            <h1 className="font-teko text-5xl md:text-7xl font-bold tracking-widest uppercase text-white">REBORN TEAM</h1>
+                            <h2 className="font-teko text-3xl md:text-4xl text-gray-300 tracking-wider">PERSONAL TRAINER</h2>
+                        </div>
+                        <div className="bg-gray-800 p-8 rounded-lg shadow-2xl">
+                            <h3 className="text-white text-3xl font-bold mb-6 text-center font-teko tracking-wide">
+                                {isLoginMode ? 'Accedi al tuo Account' : 'Crea un nuovo Account'}
+                            </h3>
+                            <form onSubmit={handleAuthAction} className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-300 mb-1">Email</label>
+                                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500" required />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-300 mb-1">Password</label>
+                                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500" required />
+                                </div>
+                                {error && <p className="text-red-400 text-sm text-center bg-red-900/50 p-3 rounded-md">{error}</p>}
+                                <button type="submit" disabled={loading} className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-md flex items-center justify-center disabled:bg-gray-500">
+                                    {loading ? 'Caricamento...' : (isLoginMode ? 'Accedi' : 'Registrati')}
+                                </button>
+                            </form>
+                            <div className="mt-6 text-center">
+                                <button onClick={() => setIsLoginMode(!isLoginMode)} className="text-sm text-blue-400 hover:text-blue-300">
+                                    {isLoginMode ? 'Non hai un account? Registrati' : 'Hai già un account? Accedi'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+        
+        const SingleExerciseBlock = ({ exercise, exerciseNumber, onTrackingChange }) => {
+            if (!exercise) { return <div className="hidden md:block" />; }
+            const handleInputChange = (weekIndex, field, value) => { onTrackingChange(exercise.id, weekIndex, field, value); };
+            return (
+                <div className="border border-gray-700 flex flex-col bg-gray-800 rounded-lg overflow-hidden">
+                    <div className="p-1.5 bg-blue-700 text-white text-left pl-3 text-sm font-bold">ESERCIZIO {exerciseNumber}</div>
+                    <div className="flex-grow flex flex-col lg:flex-row">
+                        <div className="flex flex-col p-3 border-b lg:border-b-0 lg:border-r border-gray-700 lg:w-[65%]">
+                             <div className="flex items-center space-x-3">
+                                 {exercise.imageUrl && <img src={exercise.imageUrl} className="w-16 h-20 object-cover rounded flex-shrink-0" crossOrigin="anonymous" onError={(e) => { e.target.style.display = 'none'; }} />}
+                                 <div className="flex-1 text-left">
+                                     <div className="font-bold text-base leading-tight">{exercise.name.toUpperCase()}</div>
+                                     <div className="text-sm text-blue-400 font-semibold mt-1">REC: {exercise.rest}</div>
+                                 </div>
+                             </div>
+                             <div className="flex justify-between items-center mt-3 border-t border-gray-600 pt-2">
+                                <span className="font-semibold text-gray-300 text-sm">SERIE X REPS</span>
+                                <span className="font-bold text-base bg-gray-700 px-2 py-1 rounded">{`${exercise.sets}x${exercise.reps}`}</span>
+                             </div>
+                             {exercise.notes && <div className="text-xs text-gray-400 italic pt-2 mt-2 border-t border-gray-600 break-words">{exercise.notes}</div>}
+                        </div>
+                        <div className="p-2 lg:w-[35%]">
+                             <table className="w-full h-full text-center text-xs">
+                                 <thead className="text-gray-400"><tr><th className="font-normal pb-1 w-1/2">CARICO</th><th className="font-normal pb-1 w-1/2">REPS</th></tr></thead>
+                                 <tbody>
+                                     {(exercise.tracking || []).map((weekData, weekIndex) => (
+                                         <tr key={weekIndex}>
+                                             <td className="p-0.5 h-6"><input type="text" className="tracking-input" value={weekData.load || ''} onChange={(e) => handleInputChange(weekIndex, 'load', e.target.value)} /></td>
+                                             <td className="p-0.5 h-6"><input type="text" className="tracking-input" value={weekData.reps || ''} onChange={(e) => handleInputChange(weekIndex, 'reps', e.target.value)} /></td>
+                                         </tr>
+                                     ))}
+                                 </tbody>
+                             </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+        
+        const WorkoutSheet = ({ clientName, sheetData, logoUrl, sheetId, onTrackingChange }) => {
+            return (
+                <div id={`printable-area-${sheetId}`} className="printable-area bg-gray-900 text-white shadow-2xl rounded-lg overflow-hidden font-sans mb-8">
+                    <header className="relative text-center p-4 md:p-6 bg-cover bg-center" style={{ backgroundImage: `url('https://images.pexels.com/photos/1552242/pexels-photo-1552242.jpeg')` }}>
+                        <div className="absolute inset-0 bg-black/75"></div>
+                        <div className="relative flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-right">
+                            {logoUrl && <img src={logoUrl} alt="Logo Caricato" className="h-20 sm:h-24 md:h-28 w-auto" crossOrigin="anonymous" />}
+                            <div>
+                                <h1 className="font-teko text-4xl sm:text-5xl md:text-6xl font-bold tracking-widest uppercase">REBORN TEAM</h1>
+                                <h2 className="font-teko text-2xl sm:text-3xl md:text-4xl text-gray-300 tracking-wider">PERSONAL TRAINER</h2>
+                            </div>
+                        </div>
+                    </header>
+                    <div className="bg-black p-2 flex flex-col sm:flex-row justify-between items-center text-sm gap-2 px-4">
+                        <div><span className="font-bold">CLIENTE:</span> <span className="font-normal">{clientName || 'Nome Cliente'}</span></div>
+                        <div><span className="font-bold">PIANO:</span> <span className="font-normal">{sheetData.name || 'N/A'}</span></div>
+                    </div>
+                    <main className="p-2 sm:p-4 space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {sheetData.exercises.map((exercise, index) => (
+                                <SingleExerciseBlock key={exercise.id} exercise={exercise} exerciseNumber={index + 1} onTrackingChange={(exId, weekIndex, field, value) => onTrackingChange(sheetId, exId, weekIndex, field, value)} />
+                            ))}
+                        </div>
+                    </main>
+                </div>
+            );
+        };
+
+        const ExerciseForm = ({ onAddOrUpdate, currentExercise, setCurrentExercise, imageLibrary, updateImageLibrary }) => {
+            const [formState, setFormState] = useState(INITIAL_FORM_STATE);
+            useEffect(() => {if (currentExercise) setFormState(currentExercise); else setFormState(INITIAL_FORM_STATE);}, [currentExercise]);
+            const handleChange = (e) => {const { name, value } = e.target; const newFormState = { ...formState, [name]: value }; if (name === 'name') {const matchedImage = imageLibrary[value.toLowerCase().trim()]; if (matchedImage) newFormState.imageUrl = matchedImage;}setFormState(newFormState);};
+            const fileToBase64 = (file) => new Promise((resolve, reject) => {const reader = new FileReader(); reader.readAsDataURL(file); reader.onload = () => resolve(reader.result); reader.onerror = error => reject(error);});
+            const handlePaste = async (e) => {const items = e.clipboardData.items; for (const item of items) {if (item.type.indexOf('image') === 0) {e.preventDefault(); const blob = item.getAsFile(); const base64Image = await fileToBase64(blob); setFormState(prevState => ({ ...prevState, imageUrl: base64Image })); break;}}};
+            const handleSubmit = (e) => {e.preventDefault(); onAddOrUpdate({ ...formState }); if (formState.name && formState.imageUrl) {updateImageLibrary(formState.name.toLowerCase().trim(), formState.imageUrl);}setFormState(INITIAL_FORM_STATE);};
+            return (<form onSubmit={handleSubmit} className="space-y-4 p-6 bg-gray-800 rounded-lg"><h3 className="text-2xl font-bold text-white font-teko tracking-wide">{currentExercise ? 'Modifica Esercizio' : 'Aggiungi Esercizio'}</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="md:col-span-2"><label htmlFor="name" className="block text-sm font-medium text-gray-300">Nome Esercizio</label><input type="text" name="name" id="name" value={formState.name} onChange={handleChange} className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500" required /></div><div><label htmlFor="category" className="block text-sm font-medium text-gray-300">Categoria</label><select name="category" id="category" value={formState.category} onChange={handleChange} className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500">{EXERCISE_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}</select></div><div><label htmlFor="imageUrl" className="block text-sm font-medium text-gray-300">URL Immagine</label><input type="text" name="imageUrl" id="imageUrl" value={formState.imageUrl} onChange={handleChange} onPaste={handlePaste} className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500" placeholder="Incolla URL o immagine"/></div><div className="grid grid-cols-3 gap-2"><div><label htmlFor="sets" className="block text-sm font-medium text-gray-300">Serie</label><input type="text" name="sets" id="sets" value={formState.sets} onChange={handleChange} className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500" /></div><div><label htmlFor="reps" className="block text-sm font-medium text-gray-300">Reps</label><input type="text" name="reps" id="reps" value={formState.reps} onChange={handleChange} className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500" /></div><div><label htmlFor="rest" className="block text-sm font-medium text-gray-300">Recupero</label><input type="text" name="rest" id="rest" value={formState.rest} onChange={handleChange} className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500" /></div></div><div className="md:col-span-2"><label htmlFor="notes" className="block text-sm font-medium text-gray-300">Note (opzionali)</label><textarea name="notes" id="notes" rows="2" value={formState.notes} onChange={handleChange} className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500"></textarea></div></div><div className="flex justify-end space-x-3">{currentExercise && (<button type="button" onClick={() => setCurrentExercise(null)} className="py-2 px-4 bg-gray-600 hover:bg-gray-500 text-white font-semibold rounded-lg shadow-md">Annulla</button>)}<button type="submit" className="py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-md">{currentExercise ? 'Aggiorna' : 'Aggiungi'}</button></div></form>);
+        };
+        
+        const ExerciseList = ({ exercises, onEdit, onDelete }) => (<div className="mt-6 p-6 bg-gray-800 rounded-lg"><h3 className="text-2xl font-bold text-white font-teko tracking-wide mb-4">Elenco Esercizi</h3><ul className="space-y-3 max-h-60 overflow-y-auto no-scrollbar">{exercises.length === 0 && <p className="text-gray-400 text-center py-4">Nessun esercizio aggiunto.</p>}{exercises.map(ex => (<li key={ex.id} className="flex justify-between items-center bg-gray-700 p-3 rounded-lg"><span className="text-white font-medium">{ex.name}</span><div className="space-x-2"><button onClick={() => onEdit(ex.id)} className="text-sm text-blue-400 hover:text-blue-300">Modifica</button><button onClick={() => onDelete(ex.id)} className="text-sm text-red-400 hover:text-red-300">Elimina</button></div></li>))}</ul></div>);
+        
+        // --- COMPONENTE LOGICO PRINCIPALE ---
+        const WorkoutTrackerApp = ({ auth, userId, db }) => {
+            const [appData, setAppData] = useState(INITIAL_APP_STATE);
+            const { clientName, logoUrl, sheets, imageLibrary } = appData;
+            const [activeSheetId, setActiveSheetId] = useState('A');
+            const [currentExercise, setCurrentExercise] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [modalAction, setModalAction] = useState({ action: null, title: '', message: '' });
+            const fileInputRef = useRef(null);
+            const dataSyncRef = useRef(null);
+            
+            // Gestione del caricamento dati da Firestore
+            useEffect(() => {
+                if (!db || !userId) return;
+                const { doc, onSnapshot } = window.firebase;
+                const docRef = doc(db, 'users', userId);
+                
+                const unsubscribe = onSnapshot(docRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        const mergedSheets = { ...createInitialSheets(), ...(data.sheets || {})};
+                        Object.keys(mergedSheets).forEach(key => { if (!mergedSheets[key].exercises) mergedSheets[key].exercises = []; });
+                        setAppData({
+                            clientName: data.clientName || auth.currentUser.email,
+                            logoUrl: data.logoUrl || null,
+                            sheets: mergedSheets,
+                            imageLibrary: data.imageLibrary || INITIAL_IMAGE_LIBRARY,
+                        });
+                    } else {
+                         setAppData({...INITIAL_APP_STATE, clientName: auth.currentUser.email});
+                    }
+                    setLoading(false);
+                }, (error) => { console.error("Error listening to document:", error); setLoading(false); });
+
+                return () => unsubscribe();
+            }, [db, userId, auth]);
+            
+            // Gestione del salvataggio dati su Firestore (con debounce)
+            const saveDataToFirestore = useCallback((data) => {
+                if (!db || !userId) return;
+                const { doc, setDoc } = window.firebase;
+                const docRef = doc(db, 'users', userId);
+                setDoc(docRef, data, { merge: true }).catch(error => { console.error("Error saving data:", error); });
+            }, [db, userId]);
+
+            useEffect(() => {
+                if(loading) return;
+                if (dataSyncRef.current) clearTimeout(dataSyncRef.current);
+                dataSyncRef.current = setTimeout(() => {saveDataToFirestore(appData);}, 1500);
+                return () => clearTimeout(dataSyncRef.current);
+            }, [appData, saveDataToFirestore, loading]);
+
+            // Handlers per la gestione dello stato dell'app
+            const setAppDataState = (updater) => {setAppData(currentState => {const newState = typeof updater === 'function' ? updater(currentState) : updater; return newState;});};
+            const handleSheetNameChange = (e) => {const newName = e.target.value; setAppDataState(prev => ({ ...prev, sheets: { ...prev.sheets, [activeSheetId]: { ...prev.sheets[activeSheetId], name: newName }}}));};
+            const updateImageLibrary = (name, url) => {setAppDataState(prev => ({ ...prev, imageLibrary: { ...prev.imageLibrary, [name]: url } }));};
+            const handleAddOrUpdateExercise = useCallback((exerciseData) => {const newTracking = Array.from({ length: 4 }, () => ({ load: '', reps: '' })); setAppDataState(prev => {const currentExercises = prev.sheets[activeSheetId].exercises; const newExercises = exerciseData.id ? currentExercises.map(ex => ex.id === exerciseData.id ? exerciseData : ex) : [...currentExercises, { ...exerciseData, id: Date.now(), tracking: newTracking }]; const newSheets = { ...prev.sheets, [activeSheetId]: { ...prev.sheets[activeSheetId], exercises: newExercises }}; return { ...prev, sheets: newSheets };}); setCurrentExercise(null);}, [activeSheetId]);
+            const handleEdit = useCallback((id) => {const exerciseToEdit = appData.sheets[activeSheetId].exercises.find(ex => ex.id === id); setCurrentExercise(exerciseToEdit); window.scrollTo({ top: 0, behavior: 'smooth' });}, [appData.sheets, activeSheetId]);
+            const handleDelete = useCallback((id) => {setAppDataState(prev => {const newExercises = prev.sheets[activeSheetId].exercises.filter(ex => ex.id !== id); const newSheets = { ...prev.sheets, [activeSheetId]: { ...prev.sheets[activeSheetId], exercises: newExercises }}; return { ...prev, sheets: newSheets };});}, [activeSheetId]);
+            const handleTrackingChange = useCallback((sheetKey, exerciseId, weekIndex, field, value) => {setAppDataState(prev => {const newSheets = JSON.parse(JSON.stringify(prev.sheets)); const exercise = newSheets[sheetKey].exercises.find(ex => ex.id === exerciseId); if (exercise && exercise.tracking[weekIndex]) {exercise.tracking[weekIndex][field] = value;} return { ...prev, sheets: newSheets };});}, []);
+            const fileToBase64 = (file) => new Promise((resolve, reject) => {const reader = new FileReader(); reader.readAsDataURL(file); reader.onload = () => resolve(reader.result); reader.onerror = error => reject(error);});
+            const handleLogoUpload = async (e) => {const file = e.target.files[0]; if (file) {const base64Logo = await fileToBase64(file); setAppDataState(prev => ({...prev, logoUrl: base64Logo}));}};
+            const handleSaveJson = () => {const jsonString = JSON.stringify(appData, null, 2); const blob = new Blob([jsonString], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_${clientName}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);};
+            const handleLoadJson = (e) => {const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (event) => {try {const data = JSON.parse(event.target.result); setAppDataState(data);} catch (error) {console.error("Errore nel caricamento del file JSON:", error); window.alert("File JSON non valido.");}}; reader.readAsText(file); e.target.value = null;};
+            const handleResetScheda = () => {setAppDataState({...INITIAL_APP_STATE, clientName: auth.currentUser.email}); setActiveSheetId('A'); setCurrentExercise(null); setIsModalOpen(false);};
+            const confirmReset = () => {setModalAction({action: handleResetScheda, title: 'Conferma Reset', message: 'Sei sicuro di voler resettare TUTTI i dati per questo account?'}); setIsModalOpen(true);};
+            const handleDownloadPdf = async () => { setLoading(true); const { jsPDF } = window.jspdf; const pdf = new jsPDF('p', 'mm', 'a4'); const sheetsToPrint = Object.keys(sheets).filter(id => sheets[id].exercises.length > 0); for (let i = 0; i < sheetsToPrint.length; i++) { const sheetId = sheetsToPrint[i]; const printableArea = document.getElementById(`printable-area-${sheetId}`); const canvas = await html2canvas(printableArea, { scale: 2, useCORS: true, backgroundColor: '#111827' }); const imgData = canvas.toDataURL('image/png'); const pdfWidth = pdf.internal.pageSize.getWidth(); const imgHeight = (canvas.height * pdfWidth) / canvas.width; if (i > 0) pdf.addPage(); pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight); } pdf.save(`Schede_${clientName.replace(/\s+/g, '_')}.pdf`); setLoading(false); };
+            const handleLogout = () => { window.firebase.signOut(auth); };
+
+            if (loading) { return <LoadingSpinner message="CARICAMENTO DATI..." />; }
+
+            return (
+                <>
+                    <ConfirmationModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onConfirm={modalAction.action} title={modalAction.title}>
+                        {modalAction.message}
+                    </ConfirmationModal>
+                    <div className="min-h-screen bg-gray-900 text-gray-100 p-2 sm:p-4 lg:p-8">
+                        <div className="container mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
+                            <div className="lg:col-span-4 no-print">
+                                <div className="lg:sticky top-8">
+                                    <div className="space-y-4 p-4 sm:p-6 bg-gray-800 rounded-lg mb-6">
+                                        <div className="flex justify-between items-center"><h2 className="text-3xl font-bold text-white font-teko tracking-wide">Impostazioni</h2><button onClick={handleLogout} className="text-sm py-1 px-3 bg-red-600 hover:bg-red-700 rounded-lg">Logout</button></div>
+                                        <div className="space-y-2"><label className="block text-sm font-medium text-gray-300">Carica Logo</label><input type="file" onChange={handleLogoUpload} accept="image/*" className="mt-1 block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200 cursor-pointer"/></div>
+                                        <div><label className="block text-sm font-medium text-gray-300">Nome Cliente</label><input type="text" value={clientName || ''} onChange={(e) => setAppDataState(prev => ({...prev, clientName: e.target.value}))} className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500" /></div>
+                                        <div className="border-t border-gray-700 my-4"></div>
+                                        <h3 className="text-xl font-bold text-white font-teko tracking-wide">Gestione Backup (Locale)</h3>
+                                        <div className="flex space-x-2"><button onClick={handleSaveJson} className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow-md text-sm">Esporta</button><button onClick={() => fileInputRef.current.click()} className="w-full py-2 px-3 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg shadow-md text-sm">Importa</button><input type="file" ref={fileInputRef} onChange={handleLoadJson} accept=".json" className="hidden" /></div>
+                                        <button onClick={confirmReset} className="w-full py-2 mt-2 px-3 bg-red-700 hover:bg-red-800 text-white font-semibold rounded-lg shadow-md text-sm">Reset Dati Utente</button>
+                                    </div>
+                                    <div className="bg-gray-800 rounded-lg mb-6"><div className="flex border-b border-gray-700">{Object.keys(sheets).map(id => (<button key={id} onClick={() => setActiveSheetId(id)} className={`flex-1 p-3 font-teko text-xl sm:text-2xl tracking-wider ${activeSheetId === id ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>{id}</button>))}</div><div className="p-4"><label className="block text-sm font-medium text-gray-300">Nome Piano Specifico</label><input type="text" value={sheets[activeSheetId].name || ''} onChange={handleSheetNameChange} className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500" /></div></div>
+                                    <ExerciseForm onAddOrUpdate={handleAddOrUpdateExercise} currentExercise={currentExercise} setCurrentExercise={setCurrentExercise} imageLibrary={imageLibrary} updateImageLibrary={updateImageLibrary} />
+                                    <ExerciseList exercises={sheets[activeSheetId].exercises} onEdit={handleEdit} onDelete={handleDelete} />
+                                    <div className="mt-6"><button onClick={handleDownloadPdf} disabled={loading} className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md flex items-center justify-center disabled:bg-gray-500">{loading ? 'Generazione...' : 'SCARICA PDF'}</button></div>
+                                </div>
+                            </div>
+                            <div className="lg:col-span-8">
+                                <div id="pdf-preview-area">
+                                    {Object.keys(sheets).filter(id => sheets[id].exercises.length > 0).map(id => (<WorkoutSheet key={id} sheetId={id} clientName={clientName} sheetData={sheets[id]} logoUrl={logoUrl} onTrackingChange={handleTrackingChange} />))}
+                                    {Object.keys(sheets).filter(id => sheets[id].exercises.length > 0).length === 0 && (<div className="text-center p-10 bg-gray-800 rounded-lg"><h3 className="text-2xl font-teko text-gray-400">Nessun esercizio da mostrare</h3><p className="text-gray-500">Aggiungi esercizi dal pannello di sinistra per iniziare.</p></div>)}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </>
+            );
+        };
+
+        // --- COMPONENTE RADICE ---
+        function App() {
+            const [auth, setAuth] = useState(null);
+            const [db, setDb] = useState(null);
+            const [user, setUser] = useState(null);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                const { initializeApp, getFirestore, getAuth, onAuthStateChanged } = window.firebase;
+                const app = initializeApp(firebaseConfig);
+                const authInstance = getAuth(app);
+                const firestoreInstance = getFirestore(app);
+
+                setAuth(authInstance);
+                setDb(firestoreInstance);
+                
+                const unsubscribe = onAuthStateChanged(authInstance, (currentUser) => {
+                    setUser(currentUser);
+                    setLoading(false);
+                });
+
+                return () => unsubscribe();
+            }, []);
+
+            if (loading) { return <LoadingSpinner message="INIZIALIZZAZIONE..." />; }
+
+            return user ? <WorkoutTrackerApp auth={auth} userId={user.uid} db={db} /> : <AuthScreen auth={auth} />;
+        }
+
+        const container = document.getElementById('root');
+        const root = ReactDOM.createRoot(container);
+        root.render(<App />);
+    </script>
+</body>
+
+</html>
